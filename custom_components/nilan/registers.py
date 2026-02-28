@@ -1,5 +1,14 @@
 """All Nilan Registers."""
 
+import enum
+
+
+class RegisterTable(str, enum.Enum):
+    """Modbus register table type."""
+
+    INPUT = "input"
+    HOLDING = "holding"
+
 
 class CTS602InputRegisters:
     """Register map of Nilan CTS602."""

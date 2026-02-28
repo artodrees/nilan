@@ -58,6 +58,56 @@ You must have one interface type installed on your Nilan device for this Integra
 4. On other Issues:
   - Submit the following: Logs, Modbus Version, Device Type - as Shown in the Integration, Device Version - as Shown in the Integration
 
+## Generic Register Read/Write Services
+
+The integration exposes two Home Assistant services that allow reading and writing
+arbitrary Modbus registers directly, without needing dedicated entities. This is
+useful in automations and from **Developer Tools → Services**.
+
+### `nilan.read_register`
+
+Reads a single raw 16-bit value from an **input** (read-only) or **holding**
+(read/write) register and returns it as a service response.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `address` | integer | ✓ | Register address (0-based, **not** 40001-style) |
+| `table` | `"input"` \| `"holding"` | ✓ | Register table |
+| `entry_id` | string | | Config-entry ID; omit when only one Nilan device is configured |
+
+Example automation action:
+
+```yaml
+action: nilan.read_register
+data:
+  table: input
+  address: 200   # input_t0_controller (controller board temperature × 100)
+response_variable: reg_result
+# reg_result["value"] contains the raw 16-bit integer
+```
+
+### `nilan.write_register`
+
+Writes a raw 16-bit unsigned integer value (0–65535) to a **holding** register.
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `address` | integer | ✓ | Register address (0-based) |
+| `value` | integer | ✓ | Raw 16-bit value (0–65535) |
+| `entry_id` | string | | Config-entry ID; omit when only one Nilan device is configured |
+
+Example automation action:
+
+```yaml
+action: nilan.write_register
+data:
+  address: 1002  # control_mode_set
+  value: 1       # set operation mode to 1
+```
+
+> **Note:** Register addresses follow the integration's 0-based convention, not the
+> 40001-style offset used in some Modbus documentation. Refer to
+> `custom_components/nilan/registers.py` for the full register map.
+
 ## Support
-If you like the integration, please leave a star and concider donating or becoming a sponsor.
 

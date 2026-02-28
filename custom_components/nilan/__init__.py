@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import logging
 
+import voluptuous as vol
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.entity import Entity
 
 from .const import DOMAIN
@@ -23,7 +26,92 @@ PLATFORMS = [
     "water_heater",
 ]
 
+SERVICE_READ_REGISTER = "read_register"
+SERVICE_WRITE_REGISTER = "write_register"
+
+SERVICE_READ_REGISTER_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): cv.string,
+        vol.Required("address"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Required("table"): vol.In(["input", "holding"]),
+    }
+)
+
+SERVICE_WRITE_REGISTER_SCHEMA = vol.Schema(
+    {
+        vol.Optional("entry_id"): cv.string,
+        vol.Required("address"): vol.All(vol.Coerce(int), vol.Range(min=0)),
+        vol.Required("value"): vol.All(vol.Coerce(int), vol.Range(min=0, max=65535)),
+    }
+)
+
 _LOGGER = logging.getLogger(__name__)
+
+
+def _get_device(hass: HomeAssistant, entry_id: str | None) -> Device | None:
+    """Return the Device instance for the given entry_id, or the first available one."""
+    domain_data = hass.data.get(DOMAIN, {})
+    if entry_id is not None:
+        device = domain_data.get(entry_id)
+        if not isinstance(device, Device):
+            _LOGGER.error("No Nilan device found for entry_id '%s'", entry_id)
+            return None
+        return device
+    for device in domain_data.values():
+        if isinstance(device, Device):
+            return device
+    _LOGGER.error("No Nilan device found")
+    return None
+
+
+def _register_services(hass: HomeAssistant) -> None:
+    """Register nilan services."""
+
+    async def handle_read_register(call: ServiceCall) -> dict:
+        """Handle the nilan.read_register service call.
+
+        Returns a dict with key 'value' containing the raw 16-bit register
+        value, or None if the read failed.
+        """
+        entry_id = call.data.get("entry_id")
+        address = call.data["address"]
+        table = call.data["table"]
+        device = _get_device(hass, entry_id)
+        if device is None:
+            return {"value": None}
+        result = await device.read_register(table, address)
+        _LOGGER.info(
+            "nilan.read_register table=%s address=%d -> %s", table, address, result
+        )
+        return {"value": result}
+
+    async def handle_write_register(call: ServiceCall) -> None:
+        """Handle the nilan.write_register service call.
+
+        Writes a raw 16-bit unsigned integer value to a holding register.
+        """
+        entry_id = call.data.get("entry_id")
+        address = call.data["address"]
+        value = call.data["value"]
+        device = _get_device(hass, entry_id)
+        if device is None:
+            return
+        await device.write_register(address, value)
+        _LOGGER.info("nilan.write_register address=%d value=%d", address, value)
+
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_READ_REGISTER,
+        handle_read_register,
+        schema=SERVICE_READ_REGISTER_SCHEMA,
+        supports_response=SupportsResponse.ONLY,
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_WRITE_REGISTER,
+        handle_write_register,
+        schema=SERVICE_WRITE_REGISTER_SCHEMA,
+    )
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -44,6 +132,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     except ValueError as ex:
         raise ConfigEntryNotReady(f"Timeout while connecting {host_ip}") from ex
     hass.data[DOMAIN][entry.entry_id] = device
+
+    if not hass.services.has_service(DOMAIN, SERVICE_READ_REGISTER):
+        _register_services(hass)
 
     hass.async_create_task(
         hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -78,6 +169,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     if unload_ok:
         hass.data[DOMAIN].pop(entry.entry_id)
+
+    if not hass.data.get(DOMAIN):
+        hass.services.async_remove(DOMAIN, SERVICE_READ_REGISTER)
+        hass.services.async_remove(DOMAIN, SERVICE_WRITE_REGISTER)
 
     return unload_ok
 

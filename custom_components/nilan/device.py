@@ -9,7 +9,7 @@ from homeassistant.components.modbus import modbus
 from homeassistant.core import HomeAssistant
 
 from .device_map import CTS602_DEVICE_TYPES, CTS602_ENTITY_MAP
-from .registers import CTS602HoldingRegisters, CTS602InputRegisters
+from .registers import CTS602HoldingRegisters, CTS602InputRegisters, RegisterTable
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -3660,3 +3660,67 @@ class Device:
             [value],
             "write_registers",
         )
+
+    async def read_register(self, table, address: int) -> int | None:
+        """Read a single raw register value by table and address.
+
+        Args:
+            table: RegisterTable enum value or string ("input" or "holding").
+            address: Register address.
+
+        Returns:
+            Raw 16-bit register value, or None if the read failed.
+
+        """
+        if isinstance(table, RegisterTable):
+            table_str = table.value
+        elif isinstance(table, str):
+            table_str = table.lower()
+            if table_str not in ("input", "holding"):
+                raise ValueError(
+                    f"Invalid table '{table}'. Must be 'input' or 'holding'."
+                )
+        else:
+            raise ValueError(
+                f"Invalid table type {type(table)}. Must be RegisterTable or str."
+            )
+        if not isinstance(address, int) or address < 0:
+            raise ValueError(f"Invalid address {address}. Must be a non-negative int.")
+        result = await self._modbus.async_pb_call(
+            self._unit_id, address, 1, table_str
+        )
+        if result is not None:
+            _LOGGER.debug(
+                "read_register table=%s address=%d value=%d",
+                table_str,
+                address,
+                result.registers[0],
+            )
+            return result.registers[0]
+        _LOGGER.error(
+            "read_register failed: table=%s address=%d", table_str, address
+        )
+        return None
+
+    async def write_register(self, address: int, value: int) -> bool:
+        """Write a single raw value to a holding register by address.
+
+        Args:
+            address: Register address.
+            value: Raw 16-bit unsigned integer value (0–65535).
+
+        Returns:
+            True when the write call was dispatched successfully.
+
+        """
+        if not isinstance(address, int) or address < 0:
+            raise ValueError(f"Invalid address {address}. Must be a non-negative int.")
+        if not isinstance(value, int) or not (0 <= value <= 65535):
+            raise ValueError(
+                f"Invalid value {value}. Must be an integer in range 0–65535."
+            )
+        await self._modbus.async_pb_call(
+            self._unit_id, address, [value], "write_registers"
+        )
+        _LOGGER.debug("write_register address=%d value=%d", address, value)
+        return True
