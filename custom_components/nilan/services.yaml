@@ -1,0 +1,67 @@
+read_register:
+  name: Read Register
+  description: Read a raw 16-bit value from an input or holding Modbus register.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: >
+        Config entry ID of the Nilan device to target. Optional when only one
+        Nilan device is configured.
+      required: false
+      example: "abc123def456"
+      selector:
+        text:
+    address:
+      name: Address
+      description: Register address (0-based, not 40001-style offset).
+      required: true
+      example: 200
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    table:
+      name: Table
+      description: Register table type ("input" for read-only registers, "holding" for read/write registers).
+      required: true
+      example: "input"
+      selector:
+        select:
+          options:
+            - "input"
+            - "holding"
+
+write_register:
+  name: Write Register
+  description: Write a raw 16-bit value to a holding Modbus register.
+  fields:
+    entry_id:
+      name: Entry ID
+      description: >
+        Config entry ID of the Nilan device to target. Optional when only one
+        Nilan device is configured.
+      required: false
+      example: "abc123def456"
+      selector:
+        text:
+    address:
+      name: Address
+      description: Register address (0-based, not 40001-style offset).
+      required: true
+      example: 1002
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
+    value:
+      name: Value
+      description: Raw 16-bit unsigned integer value to write (0–65535).
+      required: true
+      example: 3
+      selector:
+        number:
+          min: 0
+          max: 65535
+          mode: box
